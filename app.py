@@ -168,7 +168,7 @@
 # # =========================================================
 # ### 8. UI sederhana dengan HTML + Bootstrap
 # app.py — Render Template + RESTX API
-from flask import Flask, render_template
+from flask import Flask, render_template,send_from_directory
 from flask_restx import Api
 from resources.siswa_resource import siswa_ns
 
@@ -183,6 +183,10 @@ api.add_namespace(siswa_ns)
 @app.route("/")
 def index():
     return render_template("crud.html")
+
+@app.route("/pictures/<filename>")
+def get_picture(filename):
+    return send_from_directory("pictures", filename)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

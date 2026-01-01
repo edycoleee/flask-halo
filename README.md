@@ -714,44 +714,111 @@ def update_foto(id, filename):
 Tambahkan API Upload Foto (resources/siswa_resource.py) >> Tambahkan import:
 
 ```python
+# resources/siswa_resource.py — Endpoint RESTX
+from flask import request
+from flask_restx import Namespace, Resource, reqparse
+from models.siswa_model import get_siswa_model
+from services.siswa_service import (
+    get_all_siswa,
+    get_siswa_by_id,
+    create_siswa,
+    update_siswa,
+    delete_siswa
+)
 import os
 from werkzeug.utils import secure_filename
 from flask import request, current_app
 from services.siswa_service import update_foto
-```
-Tambahkan Resource baru:
+from werkzeug.datastructures import FileStorage
 
-```python
+siswa_ns = Namespace("siswa", description="CRUD data siswa")
+
+siswa_model = get_siswa_model(siswa_ns)
+
 UPLOAD_FOLDER = "pictures"
 ALLOWED_EXT = {"png", "jpg", "jpeg"}
+MAX_FILE_SIZE = 2 * 1024 * 1024 # 2MB
 
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXT
 
+# PARSER UNTUK SWAGGER
+upload_parser = reqparse.RequestParser()
+upload_parser.add_argument(
+    "file",
+    location="files",
+    type=FileStorage,
+    required=True,
+    help="Upload foto siswa"
+)
+
+
+@siswa_ns.route("/")
+class SiswaList(Resource):
+    def get(self):
+        return get_all_siswa(), 200
+
+    @siswa_ns.expect(siswa_model)
+    def post(self):
+        data = request.get_json()
+        create_siswa(data)
+        return {"message": "Siswa ditambahkan"}, 201
+
+
+@siswa_ns.route("/<int:id>")
+class Siswa(Resource):
+    def get(self, id):
+        siswa = get_siswa_by_id(id)
+        if siswa:
+            return siswa, 200
+        return {"message": "Siswa tidak ditemukan"}, 404
+
+    @siswa_ns.expect(siswa_model)
+    def put(self, id):
+        data = request.get_json()
+        update_siswa(id, data)
+        return {"message": "Siswa diperbarui"}, 200
+
+    def delete(self, id):
+        delete_siswa(id)
+        return {"message": "Siswa dihapus"}, 200
 
 @siswa_ns.route("/<int:id>/foto")
 class UploadFoto(Resource):
+
+    @siswa_ns.expect(upload_parser)
     def post(self, id):
         """Upload foto siswa"""
-        if "file" not in request.files:
+
+        args = upload_parser.parse_args()
+        file = args["file"]
+
+        siswa = get_siswa_by_id(id)
+        if not siswa:
+            return {"message": "Siswa tidak ditemukan"}, 404
+
+        if file is None or file.filename == "":
             return {"message": "File tidak ditemukan"}, 400
 
-        file = request.files["file"]
+        if not allowed_file(file.filename):
+            return {"message": "Format file tidak diizinkan"}, 400
 
-        if file.filename == "":
-            return {"message": "Nama file kosong"}, 400
+        # Pastikan folder upload ada
+        upload_path = os.path.join(current_app.root_path, UPLOAD_FOLDER)
+        os.makedirs(upload_path, exist_ok=True)
 
-        if file and allowed_file(file.filename):
-            filename = secure_filename(f"siswa_{id}_" + file.filename)
-            filepath = os.path.join(UPLOAD_FOLDER, filename)
+        filename = secure_filename(f"siswa_{id}_{file.filename}")
+        filepath = os.path.join(upload_path, filename)
 
-            file.save(filepath)
+        file.save(filepath)
 
-            update_foto(id, filename)
+        update_foto(id, filename)
 
-            return {"message": "Foto berhasil diupload", "filename": filename}, 201
+        return {
+            "message": "Foto berhasil diupload",
+            "filename": filename
+        }, 201
 
-        return {"message": "Format file tidak diizinkan"}, 400
 ```
 Update app.py agar folder foto bisa diakses >> Tambahkan:
 
@@ -1030,65 +1097,62 @@ Pillow
 Update API Upload Foto (resources/siswa_resource.py)
 
 ```python
+from flask_restx import Namespace, Resource, reqparse
+from werkzeug.datastructures import FileStorage
 import os
 from PIL import Image
-from werkzeug.utils import secure_filename
-from flask import request
-from flask_restx import Namespace, Resource
+from services.siswa_service import get_siswa_by_id, update_foto
 
-from services.siswa_service import (
-    get_siswa_by_id,
-    update_foto
-)
+siswa_ns = Namespace("siswa", description="CRUD data siswa")
 
 UPLOAD_FOLDER = "pictures"
 ALLOWED_EXT = {"png", "jpg", "jpeg"}
 MAX_FILE_SIZE = 2 * 1024 * 1024  # 2MB
 
+# PARSER UNTUK SWAGGER
+upload_parser = reqparse.RequestParser()
+upload_parser.add_argument(
+    "file",
+    type=FileStorage,
+    location="files",
+    required=True,
+    help="Upload foto siswa"
+)
 
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXT
 
-
 def resize_image(path):
     img = Image.open(path)
-    img.thumbnail((400, 400))  # Resize max width/height 400px
+    img.thumbnail((400, 400))
     img.save(path, optimize=True, quality=85)
-
 
 @siswa_ns.route("/<int:id>/foto")
 class UploadFoto(Resource):
+
+    @siswa_ns.expect(upload_parser)
     def post(self, id):
-        """Upload foto siswa dengan validasi + resize + hapus lama"""
+        args = upload_parser.parse_args()
+        file = args["file"]
 
         siswa = get_siswa_by_id(id)
         if not siswa:
             return {"message": "Siswa tidak ditemukan"}, 404
 
-        if "file" not in request.files:
-            return {"message": "File tidak ditemukan"}, 400
-
-        file = request.files["file"]
-
-        if file.filename == "":
-            return {"message": "Nama file kosong"}, 400
-
         if not allowed_file(file.filename):
             return {"message": "Format file tidak diizinkan"}, 400
 
-        # VALIDASI UKURAN FILE
+        # Validasi ukuran file
         file.seek(0, os.SEEK_END)
-        file_length = file.tell()
+        size = file.tell()
         file.seek(0)
-
-        if file_length > MAX_FILE_SIZE:
+        if size > MAX_FILE_SIZE:
             return {"message": "Ukuran file maksimal 2MB"}, 400
 
-        # Nama file aman
-        filename = secure_filename(f"siswa_{id}_" + file.filename)
+        filename = f"siswa_{id}_{file.filename}"
         filepath = os.path.join(UPLOAD_FOLDER, filename)
 
-        # HAPUS FOTO LAMA
+        # Hapus foto lama
         if siswa.get("foto"):
             old_path = os.path.join(UPLOAD_FOLDER, siswa["foto"])
             if os.path.exists(old_path):
@@ -1097,13 +1161,14 @@ class UploadFoto(Resource):
         # Simpan file
         file.save(filepath)
 
-        # RESIZE FOTO
+        # Resize
         resize_image(filepath)
 
-        # Simpan nama file ke DB
+        # Update DB
         update_foto(id, filename)
 
         return {"message": "Foto berhasil diupload", "filename": filename}, 201
+
 ```
 
 ### 12. Logging
@@ -1313,7 +1378,7 @@ logger = logging.getLogger("api_logger")
 
 
 
-### 13. Pytest
+### 13. Pytest untuk sqlite dengan mereset counter id tabel
 
 
 Tambahkan folder:
@@ -1322,6 +1387,7 @@ Tambahkan folder:
 project/
 │
 ├── tests/
+|   ├── __init__.py >> file kosongan wajib ini karena app init didalam
 │   └── test_siswa_api.py
 ```
 
@@ -1345,6 +1411,7 @@ def client():
     # Reset database sebelum test
     with get_db() as db:
         db.execute("DELETE FROM tbsiswa")
+        db.execute("DELETE FROM sqlite_sequence WHERE name='tbsiswa'")
         db.commit()
 
     return client
@@ -1354,7 +1421,7 @@ def client():
 # TEST: CREATE SISWA
 # -----------------------------
 def test_create_siswa(client):
-    response = client.post("/siswa/", json={
+    response = client.post("/api/siswa/", json={
         "nama": "Budi",
         "alamat": "Semarang"
     })
@@ -1366,9 +1433,9 @@ def test_create_siswa(client):
 # -----------------------------
 def test_read_all(client):
     # Insert 1 data dulu
-    client.post("/siswa/", json={"nama": "Budi", "alamat": "Semarang"})
+    client.post("/api/siswa/", json={"nama": "Budi", "alamat": "Semarang"})
 
-    response = client.get("/siswa/")
+    response = client.get("/api/siswa/")
     assert response.status_code == 200
     assert len(response.get_json()) == 1
 
@@ -1378,9 +1445,9 @@ def test_read_all(client):
 # -----------------------------
 def test_read_one(client):
     # Insert data
-    client.post("/siswa/", json={"nama": "Budi", "alamat": "Semarang"})
+    client.post("/api/siswa/", json={"nama": "Budi", "alamat": "Semarang"})
 
-    response = client.get("/siswa/1")
+    response = client.get("/api/siswa/1")
     assert response.status_code == 200
     assert response.get_json()["nama"] == "Budi"
 
@@ -1389,9 +1456,9 @@ def test_read_one(client):
 # TEST: UPDATE SISWA
 # -----------------------------
 def test_update_siswa(client):
-    client.post("/siswa/", json={"nama": "Budi", "alamat": "Semarang"})
+    client.post("/api/siswa/", json={"nama": "Budi", "alamat": "Semarang"})
 
-    response = client.put("/siswa/1", json={
+    response = client.put("/api/siswa/1", json={
         "nama": "Budi Update",
         "alamat": "Jakarta"
     })
@@ -1399,7 +1466,7 @@ def test_update_siswa(client):
     assert response.status_code == 200
 
     # Cek hasil update
-    get_res = client.get("/siswa/1")
+    get_res = client.get("/api/siswa/1")
     assert get_res.get_json()["nama"] == "Budi Update"
 
 
@@ -1407,13 +1474,13 @@ def test_update_siswa(client):
 # TEST: DELETE SISWA
 # -----------------------------
 def test_delete_siswa(client):
-    client.post("/siswa/", json={"nama": "Budi", "alamat": "Semarang"})
+    client.post("/api/siswa/", json={"nama": "Budi", "alamat": "Semarang"})
 
-    response = client.delete("/siswa/1")
+    response = client.delete("/api/siswa/1")
     assert response.status_code == 200
 
     # Pastikan sudah terhapus
-    get_res = client.get("/siswa/1")
+    get_res = client.get("/api/siswa/1")
     assert get_res.status_code == 404
 
 
@@ -1422,13 +1489,13 @@ def test_delete_siswa(client):
 # -----------------------------
 def test_upload_foto(client):
     # Insert data
-    client.post("/siswa/", json={"nama": "Budi", "alamat": "Semarang"})
+    client.post("/api/siswa/", json={"nama": "Budi", "alamat": "Semarang"})
 
     # Buat file dummy
     dummy_file = (io.BytesIO(b"fake image data"), "foto.jpg")
 
     response = client.post(
-        "/siswa/1/foto",
+        "/api/siswa/1/foto",
         content_type="multipart/form-data",
         data={"file": dummy_file}
     )
@@ -1451,4 +1518,146 @@ Lalu jalankan:
 
 ```Code
 pytest -v
+```
+
+### 14. Pytest untuk model sql tanpa mereset counter id tabel
+
+Create mereply ID dari tabel
+
+```py
+#perbaikan resources/siswa_resource.py
+
+@siswa_ns.route("/")
+class SiswaList(Resource):
+    def get(self):
+        return get_all_siswa(), 200
+
+    @siswa_ns.expect(siswa_model)
+    def post(self):
+        data = request.get_json()
+        new_id = create_siswa(data)
+        # create_siswa(data)
+        return {"message": "Siswa ditambahkan","id": new_id}, 201
+
+# perbaikan services/siswa_service.py
+def create_siswa(data):
+    db = get_db()
+    cursor = db.execute(
+        "INSERT INTO tbsiswa (nama, alamat) VALUES (?, ?)",
+        (data["nama"], data["alamat"])
+    )
+    db.commit()
+    return cursor.lastrowid
+
+```
+
+```py
+import os
+import io
+import pytest
+from app import app
+from database import get_db
+
+# -----------------------------
+# FIXTURE: CLIENT
+# -----------------------------
+@pytest.fixture
+def client():
+    app.config["TESTING"] = True
+    client = app.test_client()
+
+    # Hanya kosongkan tabel, tidak reset autoincrement
+    with get_db() as db:
+        db.execute("DELETE FROM tbsiswa")
+        db.commit()
+
+    return client
+
+
+# -----------------------------
+# HELPER: INSERT SISWA & RETURN ID
+# -----------------------------
+def create_siswa(client, nama="Budi", alamat="Semarang"):
+    res = client.post("/api/siswa/", json={"nama": nama, "alamat": alamat})
+    assert res.status_code == 201
+    return res.get_json()["id"]
+
+
+# -----------------------------
+# TEST: CREATE SISWA
+# -----------------------------
+def test_create_siswa(client):
+    sid = create_siswa(client)
+    assert isinstance(sid, int)
+
+
+# -----------------------------
+# TEST: READ ALL
+# -----------------------------
+def test_read_all(client):
+    create_siswa(client)
+
+    response = client.get("/api/siswa/")
+    assert response.status_code == 200
+    assert len(response.get_json()) == 1
+
+
+# -----------------------------
+# TEST: READ ONE
+# -----------------------------
+def test_read_one(client):
+    sid = create_siswa(client)
+
+    response = client.get(f"/api/siswa/{sid}")
+    assert response.status_code == 200
+    assert response.get_json()["nama"] == "Budi"
+
+
+# -----------------------------
+# TEST: UPDATE SISWA
+# -----------------------------
+def test_update_siswa(client):
+    sid = create_siswa(client)
+
+    response = client.put(f"/api/siswa/{sid}", json={
+        "nama": "Budi Update",
+        "alamat": "Jakarta"
+    })
+    assert response.status_code == 200
+
+    get_res = client.get(f"/api/siswa/{sid}")
+    assert get_res.get_json()["nama"] == "Budi Update"
+
+
+# -----------------------------
+# TEST: DELETE SISWA
+# -----------------------------
+def test_delete_siswa(client):
+    sid = create_siswa(client)
+
+    response = client.delete(f"/api/siswa/{sid}")
+    assert response.status_code == 200
+
+    get_res = client.get(f"/api/siswa/{sid}")
+    assert get_res.status_code == 404
+
+
+# -----------------------------
+# TEST: UPLOAD FOTO
+# -----------------------------
+def test_upload_foto(client):
+    sid = create_siswa(client)
+
+    dummy_file = (io.BytesIO(b"fake image data"), "foto.jpg")
+
+    response = client.post(
+        f"/api/siswa/{sid}/foto",
+        content_type="multipart/form-data",
+        data={"file": dummy_file}
+    )
+
+    assert response.status_code == 201
+    filename = response.get_json()["filename"]
+    assert os.path.exists(os.path.join("pictures", filename))
+
 ```

@@ -12,7 +12,8 @@ with get_db() as db:
         CREATE TABLE IF NOT EXISTS tbsiswa (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nama TEXT,
-            alamat TEXT
+            alamat TEXT,
+            foto TEXT
         )
     """)
     db.commit()

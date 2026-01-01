@@ -13,11 +13,13 @@ def get_siswa_by_id(id):
 
 def create_siswa(data):
     db = get_db()
-    db.execute(
+    cursor = db.execute(
         "INSERT INTO tbsiswa (nama, alamat) VALUES (?, ?)",
         (data["nama"], data["alamat"])
     )
     db.commit()
+    return cursor.lastrowid
+
 
 def update_siswa(id, data):
     db = get_db()
@@ -30,4 +32,9 @@ def update_siswa(id, data):
 def delete_siswa(id):
     db = get_db()
     db.execute("DELETE FROM tbsiswa WHERE id=?", (id,))
+    db.commit()
+
+def update_foto(id, filename):
+    db = get_db()
+    db.execute("UPDATE tbsiswa SET foto=? WHERE id=?", (filename, id))
     db.commit()

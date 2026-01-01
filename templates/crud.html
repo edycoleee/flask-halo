@@ -35,7 +35,8 @@
                     <th>ID</th>
                     <th>Nama</th>
                     <th>Alamat</th>
-                    <th width="150">Aksi</th>
+                    <th>Foto</th>
+                    <th width="200">Aksi</th>
                 </tr>
             </thead>
             <tbody id="table-body">
@@ -70,8 +71,36 @@
 
     </div>
 
+    <!-- MODAL UPLOAD FOTO -->
+    <div class="modal fade" id="uploadModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title">Upload Foto Siswa</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+
+                <div class="modal-body">
+                    <img id="preview-img" src="" class="img-fluid mb-3 d-none" alt="Preview Foto">
+
+                    <input type="file" id="foto-file" class="form-control" accept="image/*">
+                    <input type="hidden" id="foto-id">
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn btn-primary" onclick="uploadFoto()">Upload</button>
+                    <button class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
 <script>
-const API = "/api/siswa";
+const API = "api/siswa";
 
 // LOAD DATA
 function loadData() {
@@ -80,14 +109,18 @@ function loadData() {
         .then(data => {
             let rows = "";
             data.forEach(s => {
+                const fotoUrl = s.foto ? `/pictures/${s.foto}` : "https://via.placeholder.com/80";
+
                 rows += `
                     <tr>
                         <td>${s.id}</td>
                         <td>${s.nama}</td>
                         <td>${s.alamat}</td>
+                        <td><img src="${fotoUrl}" width="80" class="img-thumbnail"></td>
                         <td>
                             <button class="btn btn-sm btn-warning" onclick="editData(${s.id})">Edit</button>
                             <button class="btn btn-sm btn-danger" onclick="deleteData(${s.id})">Hapus</button>
+                            <button class="btn btn-sm btn-info" onclick="openUpload(${s.id}, '${s.foto || ''}')">Upload Foto</button>
                         </td>
                     </tr>
                 `;
@@ -130,6 +163,48 @@ function deleteData(id) {
 
     fetch(`${API}/${id}`, { method: "DELETE" })
         .then(() => loadData());
+}
+
+// OPEN UPLOAD MODAL
+function openUpload(id, foto) {
+    document.getElementById("foto-id").value = id;
+
+    const preview = document.getElementById("preview-img");
+    if (foto) {
+        preview.src = `/pictures/${foto}`;
+        preview.classList.remove("d-none");
+    } else {
+        preview.classList.add("d-none");
+    }
+
+    const modal = new bootstrap.Modal(document.getElementById("uploadModal"));
+    modal.show();
+}
+
+// UPLOAD FOTO
+function uploadFoto() {
+    const id = document.getElementById("foto-id").value;
+    const fileInput = document.getElementById("foto-file");
+
+    if (fileInput.files.length === 0) {
+        alert("Pilih file terlebih dahulu");
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", fileInput.files[0]);
+
+    fetch(`${API}/${id}/foto`, {
+        method: "POST",
+        body: formData
+    })
+    .then(res => res.json())
+    .then(() => {
+        loadData();
+        document.getElementById("foto-file").value = "";
+        const modal = bootstrap.Modal.getInstance(document.getElementById("uploadModal"));
+        modal.hide();
+    });
 }
 
 // SUBMIT FORM
