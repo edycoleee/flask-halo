@@ -668,3 +668,787 @@ UI CRUD → http://localhost:5000
 API → http://localhost:5000/api/siswa
 
 Swagger → http://localhost:5000/docs
+
+
+### 10. API upload foto siswa
+
+POST api/siswa/<id>/foto → upload foto
+
+Update Database: Tambah Kolom foto
+
+Edit database.py:
+
+```python
+with get_db() as db:
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS tbsiswa (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nama TEXT,
+            alamat TEXT,
+            foto TEXT
+        )
+    """)
+    db.commit()
+```
+Hapus tabel lama (cara mudah), Jika tabel sudah ada dan ingin mepertahankan isinya, tambahkan kolom manual:
+
+```sql
+ALTER TABLE tbsiswa ADD COLUMN foto TEXT;
+```
+Buat folder penyimpanan foto >> Di root project:
+
+```Code
+mkdir pictures
+```
+
+Update Service Layer (services/siswa_service.py) >> Tambahkan fungsi untuk menyimpan nama file foto:
+
+```python
+
+def update_foto(id, filename):
+    db = get_db()
+    db.execute("UPDATE tbsiswa SET foto=? WHERE id=?", (filename, id))
+    db.commit()
+```
+
+Tambahkan API Upload Foto (resources/siswa_resource.py) >> Tambahkan import:
+
+```python
+import os
+from werkzeug.utils import secure_filename
+from flask import request, current_app
+from services.siswa_service import update_foto
+```
+Tambahkan Resource baru:
+
+```python
+UPLOAD_FOLDER = "pictures"
+ALLOWED_EXT = {"png", "jpg", "jpeg"}
+
+def allowed_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXT
+
+
+@siswa_ns.route("/<int:id>/foto")
+class UploadFoto(Resource):
+    def post(self, id):
+        """Upload foto siswa"""
+        if "file" not in request.files:
+            return {"message": "File tidak ditemukan"}, 400
+
+        file = request.files["file"]
+
+        if file.filename == "":
+            return {"message": "Nama file kosong"}, 400
+
+        if file and allowed_file(file.filename):
+            filename = secure_filename(f"siswa_{id}_" + file.filename)
+            filepath = os.path.join(UPLOAD_FOLDER, filename)
+
+            file.save(filepath)
+
+            update_foto(id, filename)
+
+            return {"message": "Foto berhasil diupload", "filename": filename}, 201
+
+        return {"message": "Format file tidak diizinkan"}, 400
+```
+Update app.py agar folder foto bisa diakses >> Tambahkan:
+
+```python
+from flask import send_from_directory
+
+@app.route("/pictures/<filename>")
+def get_picture(filename):
+    return send_from_directory("pictures", filename)
+```
+
+Endpoint Baru
+
+Method >>	Endpoint >>	Fungsi
+POST >>	api/siswa//foto	>> Upload foto siswa
+GET	>> api/pictures/	>> Mengambil foto siswa
+
+Contoh Upload via cURL / Postman
+Upload foto:
+```Code
+POST /siswa/5/foto
+Form-Data:
+file = (pilih file)
+```
+
+templates/crud.html (versi lengkap + upload foto + preview)
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>CRUD Siswa</title>
+    <link rel="stylesheet" 
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+</head>
+
+<body class="bg-light">
+
+    <!-- NAVBAR -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="#">Manajemen Siswa</a>
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item"><a class="nav-link active" href="#">Home</a></li>
+                <li class="nav-item"><a class="nav-link" href="#">About</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container">
+
+        <!-- TITLE -->
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h3>Data Siswa</h3>
+            <button class="btn btn-primary" onclick="showAddForm()">Tambah Siswa</button>
+        </div>
+
+        <!-- TABLE -->
+        <table class="table table-bordered table-striped">
+            <thead class="table-dark">
+                <tr>
+                    <th>ID</th>
+                    <th>Nama</th>
+                    <th>Alamat</th>
+                    <th>Foto</th>
+                    <th width="200">Aksi</th>
+                </tr>
+            </thead>
+            <tbody id="table-body">
+                <!-- Data akan di-load via JS -->
+            </tbody>
+        </table>
+
+        <!-- FORM -->
+        <div class="card mt-4" id="form-card" style="display:none;">
+            <div class="card-header bg-primary text-white">
+                <span id="form-title">Tambah Siswa</span>
+            </div>
+            <div class="card-body">
+                <form id="siswa-form">
+                    <input type="hidden" id="form-id">
+
+                    <div class="mb-3">
+                        <label>Nama</label>
+                        <input type="text" id="form-nama" class="form-control" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label>Alamat</label>
+                        <input type="text" id="form-alamat" class="form-control" required>
+                    </div>
+
+                    <button type="submit" class="btn btn-success">Simpan</button>
+                    <button type="button" class="btn btn-secondary" onclick="hideForm()">Batal</button>
+                </form>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- MODAL UPLOAD FOTO -->
+    <div class="modal fade" id="uploadModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title">Upload Foto Siswa</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+
+                <div class="modal-body">
+                    <img id="preview-img" src="" class="img-fluid mb-3 d-none" alt="Preview Foto">
+
+                    <input type="file" id="foto-file" class="form-control" accept="image/*">
+                    <input type="hidden" id="foto-id">
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn btn-primary" onclick="uploadFoto()">Upload</button>
+                    <button class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+const API = "api/siswa";
+
+// LOAD DATA
+function loadData() {
+    fetch(API)
+        .then(res => res.json())
+        .then(data => {
+            let rows = "";
+            data.forEach(s => {
+                const fotoUrl = s.foto ? `/pictures/${s.foto}` : "https://via.placeholder.com/80";
+
+                rows += `
+                    <tr>
+                        <td>${s.id}</td>
+                        <td>${s.nama}</td>
+                        <td>${s.alamat}</td>
+                        <td><img src="${fotoUrl}" width="80" class="img-thumbnail"></td>
+                        <td>
+                            <button class="btn btn-sm btn-warning" onclick="editData(${s.id})">Edit</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteData(${s.id})">Hapus</button>
+                            <button class="btn btn-sm btn-info" onclick="openUpload(${s.id}, '${s.foto || ''}')">Upload Foto</button>
+                        </td>
+                    </tr>
+                `;
+            });
+            document.getElementById("table-body").innerHTML = rows;
+        });
+}
+
+// SHOW ADD FORM
+function showAddForm() {
+    document.getElementById("form-card").style.display = "block";
+    document.getElementById("form-title").innerText = "Tambah Siswa";
+    document.getElementById("form-id").value = "";
+    document.getElementById("form-nama").value = "";
+    document.getElementById("form-alamat").value = "";
+}
+
+// HIDE FORM
+function hideForm() {
+    document.getElementById("form-card").style.display = "none";
+}
+
+// EDIT DATA
+function editData(id) {
+    fetch(`${API}/${id}`)
+        .then(res => res.json())
+        .then(s => {
+            document.getElementById("form-card").style.display = "block";
+            document.getElementById("form-title").innerText = "Edit Siswa";
+
+            document.getElementById("form-id").value = s.id;
+            document.getElementById("form-nama").value = s.nama;
+            document.getElementById("form-alamat").value = s.alamat;
+        });
+}
+
+// DELETE DATA
+function deleteData(id) {
+    if (!confirm("Yakin ingin menghapus?")) return;
+
+    fetch(`${API}/${id}`, { method: "DELETE" })
+        .then(() => loadData());
+}
+
+// OPEN UPLOAD MODAL
+function openUpload(id, foto) {
+    document.getElementById("foto-id").value = id;
+
+    const preview = document.getElementById("preview-img");
+    if (foto) {
+        preview.src = `/pictures/${foto}`;
+        preview.classList.remove("d-none");
+    } else {
+        preview.classList.add("d-none");
+    }
+
+    const modal = new bootstrap.Modal(document.getElementById("uploadModal"));
+    modal.show();
+}
+
+// UPLOAD FOTO
+function uploadFoto() {
+    const id = document.getElementById("foto-id").value;
+    const fileInput = document.getElementById("foto-file");
+
+    if (fileInput.files.length === 0) {
+        alert("Pilih file terlebih dahulu");
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", fileInput.files[0]);
+
+    fetch(`${API}/${id}/foto`, {
+        method: "POST",
+        body: formData
+    })
+    .then(res => res.json())
+    .then(() => {
+        loadData();
+        document.getElementById("foto-file").value = "";
+        const modal = bootstrap.Modal.getInstance(document.getElementById("uploadModal"));
+        modal.hide();
+    });
+}
+
+// SUBMIT FORM
+document.getElementById("siswa-form").addEventListener("submit", function(e) {
+    e.preventDefault();
+
+    const id = document.getElementById("form-id").value;
+    const data = {
+        nama: document.getElementById("form-nama").value,
+        alamat: document.getElementById("form-alamat").value
+    };
+
+    const method = id ? "PUT" : "POST";
+    const url = id ? `${API}/${id}` : API;
+
+    fetch(url, {
+        method: method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+    }).then(() => {
+        hideForm();
+        loadData();
+    });
+});
+
+// INITIAL LOAD
+loadData();
+</script>
+
+</body>
+</html>
+```
+### 11. API upload foto siswa (Validasi, Resize, Replace)
+
+Install Pillow `pip install Pillow` >> ambahkan ke requirements.txt:
+
+```Code
+Pillow
+```
+
+Update API Upload Foto (resources/siswa_resource.py)
+
+```python
+import os
+from PIL import Image
+from werkzeug.utils import secure_filename
+from flask import request
+from flask_restx import Namespace, Resource
+
+from services.siswa_service import (
+    get_siswa_by_id,
+    update_foto
+)
+
+UPLOAD_FOLDER = "pictures"
+ALLOWED_EXT = {"png", "jpg", "jpeg"}
+MAX_FILE_SIZE = 2 * 1024 * 1024  # 2MB
+
+
+def allowed_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXT
+
+
+def resize_image(path):
+    img = Image.open(path)
+    img.thumbnail((400, 400))  # Resize max width/height 400px
+    img.save(path, optimize=True, quality=85)
+
+
+@siswa_ns.route("/<int:id>/foto")
+class UploadFoto(Resource):
+    def post(self, id):
+        """Upload foto siswa dengan validasi + resize + hapus lama"""
+
+        siswa = get_siswa_by_id(id)
+        if not siswa:
+            return {"message": "Siswa tidak ditemukan"}, 404
+
+        if "file" not in request.files:
+            return {"message": "File tidak ditemukan"}, 400
+
+        file = request.files["file"]
+
+        if file.filename == "":
+            return {"message": "Nama file kosong"}, 400
+
+        if not allowed_file(file.filename):
+            return {"message": "Format file tidak diizinkan"}, 400
+
+        # VALIDASI UKURAN FILE
+        file.seek(0, os.SEEK_END)
+        file_length = file.tell()
+        file.seek(0)
+
+        if file_length > MAX_FILE_SIZE:
+            return {"message": "Ukuran file maksimal 2MB"}, 400
+
+        # Nama file aman
+        filename = secure_filename(f"siswa_{id}_" + file.filename)
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+
+        # HAPUS FOTO LAMA
+        if siswa.get("foto"):
+            old_path = os.path.join(UPLOAD_FOLDER, siswa["foto"])
+            if os.path.exists(old_path):
+                os.remove(old_path)
+
+        # Simpan file
+        file.save(filepath)
+
+        # RESIZE FOTO
+        resize_image(filepath)
+
+        # Simpan nama file ke DB
+        update_foto(id, filename)
+
+        return {"message": "Foto berhasil diupload", "filename": filename}, 201
+```
+
+### 12. Logging
+
+Buat folder log >> Di root project:
+
+```Code
+mkdir logs
+```
+
+Buat file logger.py (global logger) >> Buat file baru:
+
+```Code
+project/logger.py
+```
+Isi:
+
+```python
+import logging
+import os
+
+LOG_FOLDER = "logs"
+LOG_FILE = os.path.join(LOG_FOLDER, "api.log")
+
+if not os.path.exists(LOG_FOLDER):
+    os.makedirs(LOG_FOLDER)
+
+logger = logging.getLogger("api_logger")
+logger.setLevel(logging.INFO)
+
+file_handler = logging.FileHandler(LOG_FILE)
+formatter = logging.Formatter(
+    "%(asctime)s - %(levelname)s - %(message)s"
+)
+file_handler.setFormatter(formatter)
+
+logger.addHandler(file_handler)
+
+
+Tambahkan middleware logging di app.py
+python
+from flask import Flask, request
+from flask_restx import Api
+from resources.siswa_resource import siswa_ns
+from logger import logger
+
+app = Flask(__name__)
+api = Api(app)
+
+api.add_namespace(siswa_ns)
+
+# -------------------------
+# LOGGING REQUEST
+# -------------------------
+@app.before_request
+def log_request():
+    logger.info(
+        f"REQUEST: {request.method} {request.path} | "
+        f"IP={request.remote_addr} | "
+        f"ARGS={dict(request.args)} | "
+        f"BODY={request.get_json(silent=True)}"
+    )
+
+# -------------------------
+# LOGGING RESPONSE
+# -------------------------
+@app.after_request
+def log_response(response):
+    logger.info(
+        f"RESPONSE: {request.method} {request.path} | "
+        f"STATUS={response.status_code}"
+    )
+    return response
+
+# -------------------------
+# LOGGING ERROR
+# -------------------------
+@app.errorhandler(Exception)
+def handle_error(e):
+    logger.error(f"ERROR: {str(e)}", exc_info=True)
+    return {"message": "Internal Server Error"}, 500
+
+@app.route("/")
+def index():
+    return render_template("crud.html")
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
+
+
+Tambahkan logging pada service CRUD (services/siswa_service.py)
+Tambahkan:
+
+python
+from logger import logger
+Lalu tambahkan log di setiap fungsi:
+
+python
+def get_all_siswa():
+    logger.info("SERVICE: get_all_siswa()")
+    ...
+Contoh lengkap:
+
+python
+def create_siswa(data):
+    logger.info(f"SERVICE: create_siswa() | DATA={data}")
+    db = get_db()
+    db.execute(
+        "INSERT INTO tbsiswa (nama, alamat) VALUES (?, ?)",
+        (data["nama"], data["alamat"])
+    )
+    db.commit()
+
+```
+Lakukan hal yang sama untuk:
+
+get_siswa_by_id
+
+update_siswa
+
+delete_siswa
+
+update_foto
+
+Logging upload foto (resources/siswa_resource.py) >> Tambahkan:
+
+```python
+from logger import logger
+```
+
+Lalu log aktivitas upload:
+
+```python
+logger.info(f"UPLOAD FOTO: siswa_id={id} | filename={filename}")
+```
+
+Dan saat menghapus foto lama:
+
+```python
+logger.info(f"HAPUS FOTO LAMA: {old_path}")
+```
+
+📄 Contoh log yang dihasilkan (logs/api.log)
+```Code
+2026-01-01 11:05:12,123 - INFO - REQUEST: POST /siswa | IP=192.168.1.10 | ARGS={} | BODY={'nama': 'Budi', 'alamat': 'Semarang'}
+2026-01-01 11:05:12,124 - INFO - SERVICE: create_siswa() | DATA={'nama': 'Budi', 'alamat': 'Semarang'}
+2026-01-01 11:05:12,130 - INFO - RESPONSE: POST /siswa | STATUS=201
+```
+
+
+Update logger.py → Rotating Log Mingguan
+
+Ganti isi logger.py menjadi:
+
+```python
+import logging
+import os
+from logging.handlers import TimedRotatingFileHandler
+
+LOG_FOLDER = "logs"
+LOG_FILE = os.path.join(LOG_FOLDER, "api.log")
+
+if not os.path.exists(LOG_FOLDER):
+    os.makedirs(LOG_FOLDER)
+
+logger = logging.getLogger("api_logger")
+logger.setLevel(logging.INFO)
+
+# -----------------------------
+# ROTATING LOG MINGGUAN
+# -----------------------------
+handler = TimedRotatingFileHandler(
+    LOG_FILE,
+    when="W0",          # Rotasi setiap minggu (Senin)
+    interval=1,         # Setiap 1 minggu
+    backupCount=8,      # Simpan 8 file log (8 minggu)
+    encoding="utf-8"
+)
+
+formatter = logging.Formatter(
+    "%(asctime)s - %(levelname)s - %(message)s"
+)
+
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+```
+
+🧠 Penjelasan Parameter Penting when="W0" >> Rotasi setiap minggu
+
+W0 = Senin
+
+Bisa diganti:
+
+W1 = Selasa
+
+W6 = Minggu
+
+backupCount=8 >> Menyimpan log 8 minggu terakhir
+
+Setelah itu file paling lama otomatis dihapus
+
+Tidak Perlu Mengubah app.py atau service lain >>Karena logger tetap bernama:
+
+```python
+logger = logging.getLogger("api_logger")
+```
+
+
+
+### 13. Pytest
+
+
+Tambahkan folder:
+
+```Code
+project/
+│
+├── tests/
+│   └── test_siswa_api.py
+```
+
+🧪 2. Buat file tests/test_siswa_api.py
+
+```python
+import os
+import io
+import pytest
+from app import app
+from database import get_db
+
+# -----------------------------
+# FIXTURE: CLIENT
+# -----------------------------
+@pytest.fixture
+def client():
+    app.config["TESTING"] = True
+    client = app.test_client()
+
+    # Reset database sebelum test
+    with get_db() as db:
+        db.execute("DELETE FROM tbsiswa")
+        db.commit()
+
+    return client
+
+
+# -----------------------------
+# TEST: CREATE SISWA
+# -----------------------------
+def test_create_siswa(client):
+    response = client.post("/siswa/", json={
+        "nama": "Budi",
+        "alamat": "Semarang"
+    })
+    assert response.status_code == 201
+
+
+# -----------------------------
+# TEST: READ ALL
+# -----------------------------
+def test_read_all(client):
+    # Insert 1 data dulu
+    client.post("/siswa/", json={"nama": "Budi", "alamat": "Semarang"})
+
+    response = client.get("/siswa/")
+    assert response.status_code == 200
+    assert len(response.get_json()) == 1
+
+
+# -----------------------------
+# TEST: READ ONE
+# -----------------------------
+def test_read_one(client):
+    # Insert data
+    client.post("/siswa/", json={"nama": "Budi", "alamat": "Semarang"})
+
+    response = client.get("/siswa/1")
+    assert response.status_code == 200
+    assert response.get_json()["nama"] == "Budi"
+
+
+# -----------------------------
+# TEST: UPDATE SISWA
+# -----------------------------
+def test_update_siswa(client):
+    client.post("/siswa/", json={"nama": "Budi", "alamat": "Semarang"})
+
+    response = client.put("/siswa/1", json={
+        "nama": "Budi Update",
+        "alamat": "Jakarta"
+    })
+
+    assert response.status_code == 200
+
+    # Cek hasil update
+    get_res = client.get("/siswa/1")
+    assert get_res.get_json()["nama"] == "Budi Update"
+
+
+# -----------------------------
+# TEST: DELETE SISWA
+# -----------------------------
+def test_delete_siswa(client):
+    client.post("/siswa/", json={"nama": "Budi", "alamat": "Semarang"})
+
+    response = client.delete("/siswa/1")
+    assert response.status_code == 200
+
+    # Pastikan sudah terhapus
+    get_res = client.get("/siswa/1")
+    assert get_res.status_code == 404
+
+
+# -----------------------------
+# TEST: UPLOAD FOTO
+# -----------------------------
+def test_upload_foto(client):
+    # Insert data
+    client.post("/siswa/", json={"nama": "Budi", "alamat": "Semarang"})
+
+    # Buat file dummy
+    dummy_file = (io.BytesIO(b"fake image data"), "foto.jpg")
+
+    response = client.post(
+        "/siswa/1/foto",
+        content_type="multipart/form-data",
+        data={"file": dummy_file}
+    )
+
+    assert response.status_code == 201
+    assert "filename" in response.get_json()
+
+    # Cek file tersimpan
+    filename = response.get_json()["filename"]
+    assert os.path.exists(os.path.join("pictures", filename))
+```
+Cara Menjalankan Test
+Pastikan pytest terinstall:
+
+```Code
+pip install pytest
+```
+
+Lalu jalankan:
+
+```Code
+pytest -v
+```
