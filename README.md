@@ -466,7 +466,7 @@ project/
     </div>
 
 <script>
-const API = "/siswa";
+const API = "/api/siswa";
 
 // LOAD DATA
 function loadData() {
@@ -582,7 +582,7 @@ if __name__ == "__main__":
 Swagger pindah ke /docs, supaya tidak sama dengan UI:
 
 ```python
-api = Api(app, doc="/docs")
+api = Api(app, doc="/docs", prefix="/api")
 ```
 
 ### 9. Docker compose 
@@ -665,6 +665,6 @@ docker compose up
 
 UI CRUD → http://localhost:5000
 
-API → http://localhost:5000/siswa
+API → http://localhost:5000/api/siswa
 
 Swagger → http://localhost:5000/docs
