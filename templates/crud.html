@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>CRUD Siswa</title>
+    <link rel="stylesheet" 
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+</head>
+
+<body class="bg-light">
+
+    <!-- NAVBAR -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="#">Manajemen Siswa</a>
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item"><a class="nav-link active" href="#">Home</a></li>
+                <li class="nav-item"><a class="nav-link" href="#">About</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container">
+
+        <!-- TITLE -->
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h3>Data Siswa</h3>
+            <button class="btn btn-primary" onclick="showAddForm()">Tambah Siswa</button>
+        </div>
+
+        <!-- TABLE -->
+        <table class="table table-bordered table-striped">
+            <thead class="table-dark">
+                <tr>
+                    <th>ID</th>
+                    <th>Nama</th>
+                    <th>Alamat</th>
+                    <th width="150">Aksi</th>
+                </tr>
+            </thead>
+            <tbody id="table-body">
+                <!-- Data akan di-load via JS -->
+            </tbody>
+        </table>
+
+        <!-- FORM -->
+        <div class="card mt-4" id="form-card" style="display:none;">
+            <div class="card-header bg-primary text-white">
+                <span id="form-title">Tambah Siswa</span>
+            </div>
+            <div class="card-body">
+                <form id="siswa-form">
+                    <input type="hidden" id="form-id">
+
+                    <div class="mb-3">
+                        <label>Nama</label>
+                        <input type="text" id="form-nama" class="form-control" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label>Alamat</label>
+                        <input type="text" id="form-alamat" class="form-control" required>
+                    </div>
+
+                    <button type="submit" class="btn btn-success">Simpan</button>
+                    <button type="button" class="btn btn-secondary" onclick="hideForm()">Batal</button>
+                </form>
+            </div>
+        </div>
+
+    </div>
+
+<script>
+const API = "/api/siswa";
+
+// LOAD DATA
+function loadData() {
+    fetch(API)
+        .then(res => res.json())
+        .then(data => {
+            let rows = "";
+            data.forEach(s => {
+                rows += `
+                    <tr>
+                        <td>${s.id}</td>
+                        <td>${s.nama}</td>
+                        <td>${s.alamat}</td>
+                        <td>
+                            <button class="btn btn-sm btn-warning" onclick="editData(${s.id})">Edit</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteData(${s.id})">Hapus</button>
+                        </td>
+                    </tr>
+                `;
+            });
+            document.getElementById("table-body").innerHTML = rows;
+        });
+}
+
+// SHOW ADD FORM
+function showAddForm() {
+    document.getElementById("form-card").style.display = "block";
+    document.getElementById("form-title").innerText = "Tambah Siswa";
+    document.getElementById("form-id").value = "";
+    document.getElementById("form-nama").value = "";
+    document.getElementById("form-alamat").value = "";
+}
+
+// HIDE FORM
+function hideForm() {
+    document.getElementById("form-card").style.display = "none";
+}
+
+// EDIT DATA
+function editData(id) {
+    fetch(`${API}/${id}`)
+        .then(res => res.json())
+        .then(s => {
+            document.getElementById("form-card").style.display = "block";
+            document.getElementById("form-title").innerText = "Edit Siswa";
+
+            document.getElementById("form-id").value = s.id;
+            document.getElementById("form-nama").value = s.nama;
+            document.getElementById("form-alamat").value = s.alamat;
+        });
+}
+
+// DELETE DATA
+function deleteData(id) {
+    if (!confirm("Yakin ingin menghapus?")) return;
+
+    fetch(`${API}/${id}`, { method: "DELETE" })
+        .then(() => loadData());
+}
+
+// SUBMIT FORM
+document.getElementById("siswa-form").addEventListener("submit", function(e) {
+    e.preventDefault();
+
+    const id = document.getElementById("form-id").value;
+    const data = {
+        nama: document.getElementById("form-nama").value,
+        alamat: document.getElementById("form-alamat").value
+    };
+
+    const method = id ? "PUT" : "POST";
+    const url = id ? `${API}/${id}` : API;
+
+    fetch(url, {
+        method: method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+    }).then(() => {
+        hideForm();
+        loadData();
+    });
+});
+
+// INITIAL LOAD
+loadData();
+</script>
+
+</body>
+</html>
