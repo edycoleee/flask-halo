@@ -23,103 +23,91 @@ pip install flask flask-restx sqlite3
 
 ```
 
+
+2. Hierarki Flask‑RESTX 
+
+```Code
+Api
+ ├── Namespace "auth"
+ │     ├── Resource Login
+ │     └── Resource Register
+ ├── Namespace "dicom"
+ │     ├── Resource Upload
+ │     └── Resource Metadata
+ └── Namespace "admin"
+       └── Resource Dashboard
 ```
-📁 Struktur proyek (sederhana tapi scalable)
-Kode
-belajar-restx/
-│
-├── app.py
-├── extensions.py
-├── resources/
-│   └── halo.py
-└── logs/
-    └── api.log
+🔹 Api >> Objek utama yang membungkus seluruh REST API.
 
+🔹 Namespace >> Mirip folder atau modul. >> Dipakai untuk memisahkan endpoint berdasarkan domain. >> Contoh: /auth, /dicom, /admin.
 
+🔹 Resource >> Class yang berisi method HTTP: get(), post(), put(), delete(). >> Setiap Resource = satu endpoint.
 
-2) 🧩 File extensions.py — setup logger
-python
-import logging
-from logging.handlers import RotatingFileHandler
+🔹 Model >> Dipakai untuk dokumentasi dan validasi payload.
 
-def setup_logger(app):
-    handler = RotatingFileHandler(
-        "logs/api.log",
-        maxBytes=200_000,   # kira-kira ratusan–ribuan baris
-        backupCount=1
-    )
-    formatter = logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(message)s"
-    )
-    handler.setFormatter(formatter)
-    handler.setLevel(logging.INFO)
-
-    app.logger.setLevel(logging.INFO)
-    app.logger.addHandler(handler)
-
-
-
-3) 📦 File resources/halo.py — namespace + endpoint
-python
-from flask_restx import Namespace, Resource, fields
-
-ns = Namespace("halo", description="Halo operations")
-
-halo_model = ns.model("HaloResponse", {
-    "Halo Flask": fields.Boolean(example=True)
-})
-
-@ns.route("/")
-class HaloResource(Resource):
-    @ns.marshal_with(halo_model)
-    def get(self):
-        """Mengembalikan pesan Halo Flask"""
-        return {"Halo Flask": True}
-
-
-) 🏗️ File app.py — main app + swagger + logging middleware
-python
-from flask import Flask, request
-from flask_restx import Api
-from extensions import setup_logger
-from resources.halo import ns as halo_ns
+```
+# Flask Sederhana
+from flask import Flask, jsonify
 
 app = Flask(__name__)
 
-# Swagger UI otomatis di / (root)
-api = Api(
-    app,
-    version="1.0",
-    title="Belajar Flask RESTX",
-    description="API sederhana dengan RESTX + Logging",
-)
+@app.route("/halo", methods=["GET"])
+def halo():
+    return jsonify({"Halo Flask": True})
 
-# Register namespace
-api.add_namespace(halo_ns, path="/halo")
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=5000, debug=True)
 
-# Setup logger
-setup_logger(app)
+```
 
-# Middleware logging
-@app.before_request
-def log_request():
-    app.logger.info(
-        f"REQUEST {request.method} {request.path} "
-        f"args={dict(request.args)} "
-        f"json={request.get_json(silent=True)}"
-    )
+```
+# Flask Restx
+from flask import Flask
+from flask_restx import Api, Resource
 
-@app.after_request
-def log_response(response):
-    app.logger.info(
-        f"RESPONSE {request.method} {request.path} "
-        f"status={response.status_code} "
-        f"content_type={response.content_type}"
-    )
-    return response
+app = Flask(__name__)
+api = Api(app)  # Membungkus Flask menjadi REST API
+
+# Namespace
+halo_ns = api.namespace("halo", description="Contoh endpoint sederhana")
+
+# Resource
+@halo_ns.route("/")
+class Halo(Resource):
+    def get(self):
+        return {"Halo Flask-RESTX": True}
+    
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
+
+```
+
+```
+from flask import Flask
+from flask_restx import Api, Resource, Namespace, fields
+
+app = Flask(__name__)
+api = Api(app)
+
+# Namespace
+user_ns = Namespace("user", description="User operations")
+
+# Model untuk dokumentasi
+user_model = user_ns.model("User", {
+    "name": fields.String(required=True),
+    "age": fields.Integer(required=True)
+})
+
+@user_ns.route("/")
+class User(Resource):
+    @user_ns.expect(user_model)
+    def post(self):
+        data = user_ns.payload
+        return {"received": data}, 201
+
+api.add_namespace(user_ns)
 
 if __name__ == "__main__":
     app.run(debug=True)
-
 
 ```
